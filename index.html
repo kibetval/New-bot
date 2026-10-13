@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TickScope Live + DBot Signal Generator</title>
+<style>
+:root{color-scheme:dark;--bg:#07111e;--p:#112239;--line:#2a405b;--muted:#9eb1c8;--blue:#42a5ff;--red:#ff657a;--green:#4fe0ad;--amber:#ffcb70}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#15304c,#07111e 60%);color:#edf4ff;font:15px/1.45 system-ui,Arial}
+main{max-width:950px;margin:auto;padding:18px 13px 35px}
+.head{display:flex;align-items:center;gap:12px}
+.logo{background:linear-gradient(135deg,#1688ff,#775cff);padding:10px 14px;border-radius:13px;font-size:23px;font-weight:900}
+h1{font-size:23px;margin:0}
+h2{font-size:16px;margin:0 0 12px}
+.muted,.small{color:var(--muted);font-size:12px}
+.panel{margin-top:13px;padding:16px;border:1px solid var(--line);border-radius:17px;background:linear-gradient(150deg,#142940f5,#0c1a2bf5);box-shadow:0 8px 25px #0002}
+.fields{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}
+.field input,.field select{width:100%;padding:12px;border:1px solid #344c69;border-radius:10px;background:#071523;color:#edf4ff;font:inherit}
+.buttons{display:flex;gap:9px;margin-top:13px}
+.btn{padding:12px 15px;border:0;border-radius:10px;font-weight:800;cursor:pointer}
+.start{background:var(--green);color:#062117;flex:1}
+.stop{background:#2b4058;color:#e7f1ff}
+.btn:disabled{opacity:.45}
+.status{display:flex;align-items:center;gap:10px;font-weight:750}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--amber)}
+.dot.good{background:var(--green)}
+.dot.bad{background:var(--red)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{padding:12px;background:#071624;border:1px solid var(--line);border-radius:12px}
+.stat label{display:block;color:var(--muted);font-size:12px}
+.val{font-size:clamp(20px,4vw,29px);font-weight:850;margin-top:4px;overflow-wrap:anywhere}
+.latest{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.quote{font-size:clamp(27px,7vw,42px);font-weight:850;overflow-wrap:anywhere}
+.digit{width:65px;height:65px;flex:none;border-radius:50%;border:2px solid var(--blue);color:var(--blue);display:grid;place-items:center;font-size:28px;font-weight:900}
+.digit.even{border-color:var(--red);color:var(--red)}
+.rings{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.ringbox{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:#071624;border:1px solid var(--line)}
+.ring{width:70px;height:70px;border-radius:50%;display:grid;place-items:center;position:relative;background:conic-gradient(var(--blue) 0deg,#293b50 0)}
+.ring.red{background:conic-gradient(var(--red) 0deg,#293b50 0)}
+.ring:before{content:"";position:absolute;inset:7px;background:#071624;border-radius:50%}
+.ring span{position:relative;font-weight:850}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{background:#1a2c42;border:1px solid #304660;border-radius:8px;padding:5px 8px;font:12px monospace}
+.log{max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#050e18;border:1px solid var(--line);border-radius:10px;padding:10px;font:12px/1.5 monospace}
+.log div{margin-bottom:5px}
+.ok{color:var(--green)}
+.warn{color:var(--amber)}
+.err{color:var(--red)}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
+@media(max-width:650px){
+.fields{grid-template-columns:1fr 1fr}
+.fields .field:first-child{grid-column:1/-1}
+.stats{grid-template-columns:1fr 1fr}
+.stats .stat:last-child{grid-column:1/-1}
+.rings{grid-template-columns:1fr}
+}
+@media(max-width:360px){
+.fields{grid-template-columns:1fr}
+.fields .field:first-child{grid-column:auto}
+}
+.signal-up{color:var(--green)}
+.signal-down{color:var(--red)}
+
+/* DBot Action Box Styles */
+.dbot-box {
+    background: #071624;
+    border: 2px dashed var(--green);
+    border-radius: 12px;
+    padding: 15px;
+    text-align: center;
+    margin-top: 12px;
+}
+.dbot-prediction {
+    font-size: clamp(32px, 8vw, 48px);
+    font-weight: 900;
+    color: var(--green);
+    margin: 8px 0;
+}
+.dbot-contract {
+    display: inline-block;
+    background: rgba(66, 165, 255, 0.2);
+    color: var(--blue);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 1rem;
+}
+</style>
+</head>
+<body>
+<main>
+<header class="head">
+<div class="logo">T</div>
+<div>
+<h1>TickScope <span style="color:var(--blue)">Live</span></h1>
+<div class="muted">Deriv market data · live diagnostics · DBot Signal Engine</div>
+</div>
+</header>
+
+<section class="panel">
+<h2>Market & analysis settings</h2>
+<div class="fields">
+<div class="field">
+<label for="market">Market</label>
+<select id="market">
+<option value="1HZ10V">Volatility 10 (1s)</option>
+<option value="1HZ25V">Volatility 25 (1s)</option>
+<option value="1HZ50V">Volatility 50 (1s)</option>
+<option value="1HZ100V">Volatility 100 (1s)</option>
+<option value="R_10">Volatility 10</option>
+<option value="R_25">Volatility 25</option>
+<option value="R_50" selected>Volatility 50</option>
+<option value="R_100">Volatility 100</option>
+</select>
+</div>
+<div class="field">
+<label for="window">Analysis window (%)</label>
+<input id="window" type="number" min="0" max="100" value="100">
+</div>
+<div class="field">
+<label for="count">History ticks (10–1000)</label>
+<input id="count" type="number" min="10" max="1000" value="500">
+</div>
+</div>
+<div class="buttons">
+<button id="start" class="btn start">▶ Start data</button>
+<button id="stop" class="btn stop" disabled>■ Stop</button>
+</div>
+<p class="small">No account login, API token, order placement, or trading.</p>
+</section>
+
+<section class="panel">
+<div class="status"><span id="dot" class="dot"></span><span id="status">Idle — tap Start data</span></div>
+<p id="detail" class="small">Waiting for your command.</p>
+</section>
+
+<!-- DBOT RECOMMENDATION PANEL -->
+<section class="panel" style="border-color: var(--green);">
+<h2>DBot Action & Prediction Desk</h2>
+<div class="dbot-box">
+<div class="small">RECOMMENDED DBOT PREDICTION VALUE / BARRIER:</div>
+<div id="dbotPredVal" class="dbot-prediction">-</div>
+<div class="small" style="margin-top:6px;">RECOMMENDED CONTRACT TYPE:</div>
+<div id="dbotContractType" class="dbot-contract">WAITING FOR TICKS...</div>
+</div>
+<div class="stats" style="margin-top:12px;">
+<div class="stat"><label>Strategy Mode</label><div id="dbotStrat" class="val" style="font-size:16px;">Digit Differ / Over-Under</div></div>
+<div class="stat"><label>Confidence Bias</label><div id="dbotBias" class="val" style="font-size:16px;">—</div></div>
+<div class="stat"><label>Evaluated Ticks</label><div id="dbotSample" class="val" style="font-size:16px;">0</div></div>
+</div>
+</section>
+
+<section class="panel">
+<h2>Latest tick</h2>
+<div class="latest">
+<div style="min-width:0">
+<div class="small">Latest quote</div>
+<div id="quote" class="quote">—</div>
+<div id="meta" class="small">No tick received yet</div>
+</div>
+<div id="digit" class="digit">—</div>
+</div>
+</section>
+
+<section class="panel">
+<h2>Observed digit distribution</h2>
+<div class="stats">
+<div class="stat"><label>Ticks in window</label><div id="n" class="val">0</div></div>
+<div class="stat"><label>Last digit</label><div id="last" class="val">—</div></div>
+<div class="stat"><label>Most common digit</label><div id="common" class="val">—</div></div>
+</div>
+<div class="rings">
+<div class="ringbox">
+<div id="oddRing" class="ring"><span id="oddPct">—%</span></div>
+<div><b style="color:var(--blue)">Odd digits</b><div id="oddCount" class="small">0 observed</div></div>
+</div>
+<div class="ringbox">
+<div id="evenRing" class="ring red"><span id="evenPct">—%</span></div>
+<div><b style="color:var(--red)">Even digits</b><div id="evenCount" class="small">0 observed</div></div>
+</div>
+</div>
+<p class="small">These are frequencies in received data, not a guarantee or prediction of the next digit.</p>
+<div id="chips" class="chips"></div>
+</section>
+
+<section class="panel">
+<h2>Experimental Signal Desk</h2>
+<div class="status"><span id="signalDot" class="dot"></span><span id="signalTitle">WAIT — collecting live ticks</span></div>
+<p id="signalText" class="small">Signals are disabled until enough live ticks have been collected. This is a demo research aid, not a prediction guarantee.</p>
+<div class="stats">
+<div class="stat"><label>Candidate direction</label><div id="signalDirection" class="val">WAIT</div></div>
+<div class="stat"><label>Barrier to review</label><div id="signalBarrier" class="val">—</div></div>
+<div class="stat"><label>Sample size</label><div id="signalSample" class="val">0</div></div>
+</div>
+<div class="buttons">
+<button id="signalOn" class="btn start">Enable signal alerts</button>
+<button id="signalOff" class="btn stop" disabled>Pause alerts</button>
+</div>
+<p class="small">Rule: after at least 100 ticks, compare the observed last-digit distribution with the 10% baseline. An alert appears only when one side of a candidate barrier has a sufficiently unusual historical frequency. It does not mean the next digit is predictable. No trades are placed.</p>
+<div id="signalLog" class="log">No signal alerts yet.</div>
+</section>
+
+<section class="panel">
+<h2>Connection diagnostic log</h2>
+<div id="log" class="log">Ready. Tap Start data to connect.</div>
+<div class="buttons"><button id="clear" class="btn stop">Clear log</button></div>
+</section>
+
+<footer>Educational market-data display. Symbol availability may vary.</footer>
+</main>
+
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);
+const endpoints=[
+{name:'Deriv public market-data WebSocket',url:'wss://ws.derivws.com/websockets/v3?app_id=1089',mode:'legacy'},
+{name:'New public Options WebSocket compatibility test',url:'wss://api.derivws.com/trading/v1/options/ws/public',mode:'options'}
+];
+let ws=null,running=false,timer=null,sub=null,symbol='',digits=[],counts=Array(10).fill(0),history=false;
+
+function log(s,c=''){
+let d=document.createElement('div');
+d.className=c;
+d.textContent='['+new Date().toLocaleTimeString()+'] '+s;
+$('log').prepend(d);
+while($('log').children.length>80)$('log').lastChild.remove();
+}
+function state(s,d='',k=''){
+$('status').textContent=s;
+$('detail').textContent=d;
+$('dot').className='dot '+k;
+}
+function send(o){
+if(ws&&ws.readyState===WebSocket.OPEN){
+ws.send(JSON.stringify(o));
+log('SEND '+JSON.stringify(o));
+return true;
+}
+log('Cannot send: socket is not open','err');
+return false;
+}
+function stopControls(){
+running=false;
+if(timer){clearTimeout(timer);timer=null}
+$('start').disabled=false;
+$('stop').disabled=true;
+}
+function closeSocket(){
+if(timer){clearTimeout(timer);timer=null}
+if(ws){
+let old=ws;
+ws=null;
+old.onopen=old.onmessage=old.onerror=old.onclose=null;
+try{old.close()}catch(e){}
+}
+}
+function stop(){
+running=false;
+closeSocket();
+stopControls();
+state('Stopped','Tap Start data to try again');
+log('Stopped by user','warn');
+}
+
+/* DBOT PREDICTION & SIGNAL COMPUTATION ENGINE */
+function updateDBotEngine() {
+    const n = digits.length;
+    $('dbotSample').textContent = n;
+    
+    if (n < 30) {
+        $('dbotPredVal').textContent = '-';
+        $('dbotContractType').textContent = 'COLLECTING DATA...';$('dbotBias').textContent = 'Waiting';
+        return;
+    }
+
+    // 1. Find Coldest Digit (for Digit Differ strategy)
+    let minC = Infinity, coldDigit = 0;
+    counts.forEach((c, d) => {
+        if (c < minC) { minC = c; coldDigit = d; }
+    });
+
+    // 2. Compute Over / Under Bias (Barrier 4)
+    let overCount = 0, underCount = 0;
+    digits.forEach(d => {
+        if (d > 4) overCount++;
+        else if (d < 5) underCount++;
+    });
+    
+    const overPct = (overCount / n) * 100;
+    const underPct = (underCount / n) * 100;
+
+    // Decision logic: if Over is heavily biased (>54%), recommend Under or vice versa based on reversion, or follow trend
+    if (overPct > 54) {
+        $('dbotPredVal').textContent = '4 (Under)';
+        $('dbotContractType').textContent = 'DIGITUNDER (Barrier 4)';$('dbotBias').textContent = `Over Bias (${overPct.toFixed(1)}%)`;
+    } else if (underPct > 54) {
+        $('dbotPredVal').textContent = '4 (Over)';
+        $('dbotContractType').textContent = 'DIGITOVER (Barrier 4)';$('dbotBias').textContent = `Under Bias (${underPct.toFixed(1)}%)`;
+    } else {
+        // Fallback to Digit Differ using the coldest digit
+        $('dbotPredVal').textContent = coldDigit;
+        $('dbotContractType').textContent = `DIGITDIFF (Differ ${coldDigit})`;
+        $('dbotBias').textContent = 'Balanced / Differ Mode';
+    }
+}
+
+function render(){
+    let n=digits.length;
+    let odd=counts.reduce((a,c,i)=>a+(i%2?c:0),0);
+    let even=n-odd;
+    $('n').textContent=n;
+    $('last').textContent=n?digits[n-1]:'—';
+    $('oddPct').textContent=n?(odd/n*100).toFixed(1)+'%':'—%';
+    $('evenPct').textContent=n?(even/n*100).toFixed(1)+'\%':'—\%';$('oddCount').textContent=odd+' of '+n+' observed';
+    $('evenCount').textContent=even+' of '+n+' observed';$('oddRing').style.background=`conic-gradient(var(--blue) ${n?odd/n*360:0}deg,#293b50 0)`;
+    $('evenRing').style.background=`conic-gradient(var(--red) ${n?even/n*360:0}deg,#293b50 0)`;
+    let b=counts.indexOf(Math.max(...counts));
+    $('common').textContent=n?`${b} (${(counts[b]/n*100).toFixed(1)}%)`:'—';
+    $('chips').replaceChildren();
+    counts.forEach((v,i)=>{
+        let x=document.createElement('span');
+        x.className='chip';
+        x.textContent=`${i}: ${v}${n?' · '+(v/n*100).toFixed(1)+'%':''}`;
+        $('chips').append(x);
+    });
+    updateDBotEngine();
+}
+
+function addQuote(q,pip,epoch,source){
+    let p=Math.max(0,Math.min(10,Number(pip)||2));
+    let s=Number(q).toFixed(p);
+    let m=s.replace('.','').replace('-','').match(/(\d)$/);
+    if(!m)return;
+    let d=+m[1];
+    $('quote').textContent=s;
+    $('digit').textContent=d;
+    $('digit').className='digit '+(d\%2===0?'even':'');$('meta').textContent=symbol+' · '+(epoch?new Date(+epoch*1000).toLocaleTimeString():'time n/a')+' · '+source;
+    digits.push(d);
+    counts[d]++;
+    let pct=Math.max(0,Math.min(100,Number($('window').value)||0));
+    let cap=Math.max(1,Math.floor(Math.max(10,Math.min(1000,Number($('count').value)||500))*pct/100));
+    while(digits.length>cap)counts[digits.shift()]--;
+    render();
+}
+
+function reset(){
+    digits=[];
+    counts=Array(10).fill(0);
+    history=false;
+    sub=null;
+    $('quote').textContent='—';$('digit').textContent='—';
+    $('digit').className='digit';$('meta').textContent='No tick received yet';
+    render();
+}
+
+function nextEndpoint(i){
+    if(!running)return;
+    if(i>=endpoints.length){
+        state('No tick data received','Both endpoint tests failed. Read the log and send me a screenshot.','bad');
+        stopControls();
+        return;
+    }
+    closeSocket();
+    let ep=endpoints[i],opened=false,got=false;
+    state(`Connecting (${i+1}/${endpoints.length})`,ep.name);
+    log('Opening '+ep.name+': '+ep.url,'warn');
+    try{ws=new WebSocket(ep.url)}
+    catch(e){
+        log('WebSocket constructor error: '+e.message,'err');
+        nextEndpoint(i+1);
+        return;
+    }
+    ws.onopen=()=>{
+        opened=true;
+        log('WebSocket OPEN: '+ep.name,'ok');
+        state('Connected; requesting data',ep.name,'good');
+        if(ep.mode==='legacy'){
+            send({ticks_history:symbol,adjust_start_time:1,count:Math.max(10,Math.min(1000,+$('count').value||500)),end:'latest',start:1,style:'ticks',req_id:1});
+            send({ping:1,req_id:99});
+        }else{
+            send({ticks:symbol,subscribe:1,req_id:2});
+            send({ping:1,req_id:99});
+        }
+        timer=setTimeout(()=>{
+            if(!running||got)return;
+            log('No history/tick/API-error response in 12 seconds from '+ep.name,'err');
+            nextEndpoint(i+1);
+        },12000);
+    };
+    ws.onmessage=e=>{
+        let d;
+        try{d=JSON.parse(e.data)}
+        catch(_){log('Non-JSON response: '+String(e.data).slice(0,200),'err');return}
+        log('RECV '+JSON.stringify(d));
+        if(d.msg_type==='history'||d.msg_type==='tick'||d.error){
+            got=true;
+            if(timer){clearTimeout(timer);timer=null}
+        }
+        if(d.error){
+            log('API ERROR '+(d.error.code||'')+': '+(d.error.message||''),'err');
+            if(ep.mode==='options'&&i+1<endpoints.length){nextEndpoint(i+1);return}
+            state('Deriv API error',d.error.code+': '+d.error.message,'bad');
+            return;
+        }
+        if(d.msg_type==='history'&&d.history){
+            let ps=d.history.prices||[],ts=d.history.times||[];
+            history=true;
+            log('History received: '+ps.length+' quotes','ok');
+            ps.forEach((q,j)=>addQuote(q,d.pip_size,ts[j],'history'));
+            if(ep.mode==='legacy'){
+                send({ticks:symbol,subscribe:1,req_id:2});
+                state('History loaded; waiting for live ticks','Subscription request sent','good');
+            }
+            return;
+        }
+        if(d.msg_type==='tick'&&d.tick){
+            let t=d.tick;
+            sub=d.subscription?.id||t.id||sub;
+            addQuote(t.quote,t.pip_size,t.epoch,'live');
+            state('Live ticks connected',symbol+' · receiving real market data','good');
+            return;
+        }
+        if(d.msg_type==='ping'||d.ping)log('Ping response received','ok');
+    };
+    ws.onerror=()=>log('WebSocket error event; browser does not reveal detailed cause.','err');
+    ws.onclose=e=>{
+        log(`CLOSE code=${e.code}, clean=${e.wasClean}, reason=${e.reason||'(empty)'}`,'err');
+        if(!running)return;
+        if(!opened||(!got&&i+1<endpoints.length)){nextEndpoint(i+1);return}
+        state('Connection closed ('+e.code+')','See diagnostic log for last response','bad');
+        stopControls();
+    };
+}
+
+let alertsEnabled=false,lastAlertKey='',signalHistory=[];
+function signalLog(message,cls=''){
+    const el=$('signalLog');
+    if(el.textContent==='No signal alerts yet.')el.textContent='';
+    const row=document.createElement('div');
+    row.className=cls;
+    row.textContent='['+new Date().toLocaleTimeString()+'] '+message;
+    el.prepend(row);
+    while(el.children.length>30)el.lastChild.remove();
+}
+function evaluateSignal(){
+    const n=digits.length;
+    $('signalSample').textContent=n;
+    if(!alertsEnabled){
+        $('signalTitle').textContent='ALERTS PAUSED';
+        $('signalDirection').textContent='OFF';$('signalBarrier').textContent='—';
+        return;
+    }
+    if(n<100){
+        $('signalTitle').textContent='WAIT — need at least 100 ticks';$('signalDirection').textContent='WAIT';
+        $('signalBarrier').textContent='—';$('signalDot').className='dot';
+        return;
+    }
+    let best=null;
+    for(let b=1;b<=8;b++){
+        let over=0,under=0;
+        for(const d of digits){
+            if(d>b)over++;
+            else if(d<b)under++;
+        }
+        const valid=over+under;
+        if(valid<100)continue;
+        const overRate=over/valid,underRate=under/valid;
+        const deviation=Math.abs(overRate-0.5);
+        if(!best||deviation>best.deviation)
+        best={b,overRate,underRate,deviation,over,under,valid};
+    }
+    if(!best){
+        $('signalTitle').textContent='WAIT — sample too small';
+        return;
+    }
+    const chosen=best.overRate>0.5?'OVER':'UNDER';
+    const chosenRate=chosen==='OVER'?best.overRate:best.underRate;
+    const pct=(chosenRate*100).toFixed(1);
+    $('signalDirection').textContent=chosen;
+    $('signalDirection').className='val '+(chosen==='OVER'?'signal-up':'signal-down');
+    $('signalBarrier').textContent=String(best.b);$('signalDot').className='dot '+(best.deviation>=0.08?'good':'');
+    if(best.deviation<0.08){
+        $('signalTitle').textContent='NO SIGNAL — no strong historical deviation';$('signalText').textContent='The current sample is not unusual enough under this experimental filter. Keep observ
