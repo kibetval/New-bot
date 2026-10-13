@@ -242,7 +242,8 @@ window.addEventListener('DOMContentLoaded', () => {
         state('Stopped', 'Tap Start data to try again');
     }
 
-    // ADVANCED MULTI-STRATEGY SCANNER
+    // IMPROVED MULTI-STRATEGY SCANNER
+    // Fixes: compares Over/Under to expected baseline for each barrier
     function updateDBotEngine() {
         const n = digits.length;
         $('dbotSample').textContent = n;
@@ -252,29 +253,25 @@ window.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Test Over/Under across barriers 2 through 7 to find strongest deviation from 50%
-        let bestOU = { type: '', barrier: 4, score: 0, label: '' };
+        // Find Best Over/Under deviation relative to expected baseline
+        let bestOU = { barrier: 4, deviation: 0, overP: 0, expectedOverP: 0, type: '' };
         for(let b = 2; b <= 7; b++) {
-            let over = 0, under = 0;
-            digits.forEach(d => {
-                if(d > b) over++;
-                else if(d < b + 1) under++;
-            });
-            let overP = (over / n) * 100;
-            let underP = (under / n) * 100;
-
-            if(Math.abs(overP - 50) > bestOU.score) {
-                bestOU.score = Math.abs(overP - 50);
-                bestOU.barrier = b;
-                bestOU.type = overP > 52 ? 'OVER' : (underP > 52 ? 'UNDER' : '');
+            let over = 0;
+            digits.forEach(d => { if(d > b) over++; });
+            const overP = (over / n) * 100;
+            // Expected over probability for random uniform digits: fraction of digits > b
+            const expectedOverP = ((9 - b) / 10) * 100; // e.g., b=4 -> (5/10)=50%
+            const deviation = Math.abs(overP - expectedOverP);
+            if(deviation > bestOU.deviation) {
+                bestOU = { barrier: b, deviation, overP, expectedOverP, type: (overP > expectedOverP) ? 'OVER' : 'UNDER' };
             }
         }
 
-        // Test Even/Odd split
-        let evens = counts.reduce((a,c,i)=>a+(i%2===0?c:0),0);
-        let evenP = (evens / n) * 100;
+        // Even/Odd split
+        const evens = counts.reduce((a,c,i)=>a+(i%2===0?c:0),0);
+        const evenP = (evens / n) * 100;
 
-        // Find Hottest & Coldest Digits
+        // Coldest & Hottest
         let minC = Infinity, coldDigit = 0;
         let maxC = -1, hotDigit = 0;
         counts.forEach((c, d) => {
@@ -282,33 +279,35 @@ window.addEventListener('DOMContentLoaded', () => {
             if(c > maxC) { maxC = c; hotDigit = d; }
         });
 
-        // Determine primary recommendation based on highest statistical anomaly
-        if(bestOU.score > 4 && bestOU.type) {
-            // Over / Under signal is strong
+        // Decision logic: require a minimum deviation to recommend Over/Under (to avoid always picking high barrier)
+        const OU_THRESHOLD = 6.0; // percent points from expected baseline
+        if(bestOU.deviation >= OU_THRESHOLD && bestOU.type) {
             if(bestOU.type === 'OVER') {
                 $('dbotPredVal').textContent = `${bestOU.barrier} (Over)`;
                 $('dbotContractType').textContent = `DIGITOVER (Barrier ${bestOU.barrier})`;
-                $('dbotBias').textContent = `High Over Bias`;
-                $('dbotStrat').textContent = 'Over / Under';
+                $('dbotBias').textContent = `Over vs expected ${bestOU.overP.toFixed(1)}% (exp ${bestOU.expectedOverP.toFixed(1)}%)`;
+                $('dbotStrat').textContent = `Over/Under (barrier ${bestOU.barrier})`;
             } else {
                 $('dbotPredVal').textContent = `${bestOU.barrier} (Under)`;
                 $('dbotContractType').textContent = `DIGITUNDER (Barrier ${bestOU.barrier})`;
-                $('dbotBias').textContent = `High Under Bias`;
-                $('dbotStrat').textContent = 'Over / Under';
+                $('dbotBias').textContent = `Under vs expected ${(100-bestOU.overP).toFixed(1)}% (exp ${(100-bestOU.expectedOverP).toFixed(1)}%)`;
+                $('dbotStrat').textContent = `Over/Under (barrier ${bestOU.barrier})`;
             }
-        } else if(Math.abs(evenP - 50) > 5) {
-            // Even / Odd signal is strong
-            if(evenP > 52) {
+        } else if(Math.abs(evenP - 50) > 6) {
+            // strong even/odd bias
+            if(evenP > 50) {
                 $('dbotPredVal').textContent = 'Even';
-                $('dbotContractType').textContent = 'DIGITEVEN';$('dbotBias').textContent = `Even Bias (${evenP.toFixed(1)}%)`;
+                $('dbotContractType').textContent = 'DIGITEVEN';
+                $('dbotBias').textContent = `Even Bias (${evenP.toFixed(1)}%)`;
                 $('dbotStrat').textContent = 'Even / Odd';
             } else {
                 $('dbotPredVal').textContent = 'Odd';
-                $('dbotContractType').textContent = 'DIGITODD';$('dbotBias').textContent = `Odd Bias (${(100-evenP).toFixed(1)}%)`;
+                $('dbotContractType').textContent = 'DIGITODD';
+                $('dbotBias').textContent = `Odd Bias (${(100-evenP).toFixed(1)}%)`;
                 $('dbotStrat').textContent = 'Even / Odd';
             }
         } else {
-            // Default to Digit Differ / Match using cold/hot digits
+            // Default to Digit Differ (coldest digit) when nothing else stands out
             $('dbotPredVal').textContent = coldDigit;
             $('dbotContractType').textContent = `DIGITDIFF (Differ ${coldDigit})`;
             $('dbotBias').textContent = `Coldest Digit (${((minC/n)*100).toFixed(1)}%)`;
