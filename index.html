@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TickScope Live + DBot Signal Generator</title>
+<title>TickScope Live + Multi-Strategy DBot Engine</title>
 <style>
 :root{color-scheme:dark;--bg:#07111e;--p:#112239;--line:#2a405b;--muted:#9eb1c8;--blue:#42a5ff;--red:#ff657a;--green:#4fe0ad;--amber:#ffcb70}
 *{box-sizing:border-box}
@@ -28,7 +28,7 @@ h2{font-size:16px;margin:0 0 12px}
 .dot.good{background:var(--green)}
 .dot.bad{background:var(--red)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.stat{Padding:12px;background:#071624;border:1px solid var(--line);border-radius:12px}
+.stat{padding:12px;background:#071624;border:1px solid var(--line);border-radius:12px}
 .stat label{display:block;color:var(--muted);font-size:12px}
 .val{font-size:clamp(20px,4vw,29px);font-weight:850;margin-top:4px;overflow-wrap:anywhere}
 .latest{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -68,7 +68,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
     margin-top: 12px;
 }
 .dbot-prediction {
-    font-size: clamp(32px, 8vw, 48px);
+    font-size: clamp(28px, 7vw, 42px);
     font-weight: 900;
     color: var(--green);
     margin: 8px 0;
@@ -90,7 +90,7 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
 <div class="logo">T</div>
 <div>
 <h1>TickScope <span style="color:var(--blue)">Live</span></h1>
-<div class="muted">Deriv market data · live diagnostics · DBot Signal Engine</div>
+<div class="muted">Deriv market data · multi-strategy DBot analyzer</div>
 </div>
 </header>
 
@@ -116,14 +116,13 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
 </div>
 <div class="field">
 <label for="count">History ticks (10–1000)</label>
-<input id="count" type="number" min="10" max="1000" value="500">
+<input id="count" type="number" min="10" max="1000" value="200">
 </div>
 </div>
 <div class="buttons">
 <button id="start" class="btn start">▶ Start data</button>
 <button id="stop" class="btn stop" disabled>■ Stop</button>
 </div>
-<p class="small">No account login, API token, order placement, or trading.</p>
 </section>
 
 <section class="panel">
@@ -132,17 +131,17 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:16px}
 </section>
 
 <section class="panel" style="border-color: var(--green);">
-<h2>DBot Action & Prediction Desk</h2>
+<h2>DBot Action & Prediction Desk (Multi-Strategy)</h2>
 <div class="dbot-box">
-<div class="small">RECOMMENDED DBOT PREDICTION VALUE / BARRIER:</div>
+<div class="small">RECOMMENDED DBOT PREDICTION / BARRIER:</div>
 <div id="dbotPredVal" class="dbot-prediction">-</div>
 <div class="small" style="margin-top:6px;">RECOMMENDED CONTRACT TYPE:</div>
 <div id="dbotContractType" class="dbot-contract">WAITING FOR TICKS...</div>
 </div>
 <div class="stats" style="margin-top:12px;">
-<div class="stat"><label>Strategy Mode</label><div id="dbotStrat" class="val" style="font-size:16px;">Digit Differ / Over-Under</div></div>
-<div class="stat"><label>Confidence Bias</label><div id="dbotBias" class="val" style="font-size:16px;">—</div></div>
-<div class="stat"><label>Evaluated Ticks</label><div id="dbotSample" class="val" style="font-size:16px;">0</div></div>
+<div class="stat"><label>Active Strategy</label><div id="dbotStrat" class="val" style="font-size:15px;">Dynamic Scan</div></div>
+<div class="stat"><label>Detected Bias</label><div id="dbotBias" class="val" style="font-size:15px;">—</div></div>
+<div class="stat"><label>Evaluated Ticks</label><div id="dbotSample" class="val" style="font-size:15px;">0</div></div>
 </div>
 </section>
 
@@ -215,7 +214,6 @@ window.addEventListener('DOMContentLoaded', () => {
     function send(o) {
         if(ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(o));
-            log('SEND ' + JSON.stringify(o));
             return true;
         }
         return false;
@@ -242,42 +240,79 @@ window.addEventListener('DOMContentLoaded', () => {
         closeSocket();
         stopControls();
         state('Stopped', 'Tap Start data to try again');
-        log('Stopped by user', 'warn');
     }
 
+    // ADVANCED MULTI-STRATEGY SCANNER
     function updateDBotEngine() {
         const n = digits.length;
         $('dbotSample').textContent = n;
         if(n < 20) {
-            $('dbotPredVal').textContent = '-';
-            $('dbotContractType').textContent = 'COLLECTING TICKS...';$('dbotBias').textContent = 'Waiting';
+            $('dbotPredVal').textContent = '-';$('dbotContractType').textContent = 'COLLECTING TICKS...';
+            $('dbotBias').textContent = 'Waiting';$('dbotStrat').textContent = 'Scanning...';
             return;
         }
 
+        // Test Over/Under across barriers 2 through 7 to find strongest deviation from 50%
+        let bestOU = { type: '', barrier: 4, score: 0, label: '' };
+        for(let b = 2; b <= 7; b++) {
+            let over = 0, under = 0;
+            digits.forEach(d => {
+                if(d > b) over++;
+                else if(d < b + 1) under++;
+            });
+            let overP = (over / n) * 100;
+            let underP = (under / n) * 100;
+
+            if(Math.abs(overP - 50) > bestOU.score) {
+                bestOU.score = Math.abs(overP - 50);
+                bestOU.barrier = b;
+                bestOU.type = overP > 52 ? 'OVER' : (underP > 52 ? 'UNDER' : '');
+            }
+        }
+
+        // Test Even/Odd split
+        let evens = counts.reduce((a,c,i)=>a+(i%2===0?c:0),0);
+        let evenP = (evens / n) * 100;
+
+        // Find Hottest & Coldest Digits
         let minC = Infinity, coldDigit = 0;
+        let maxC = -1, hotDigit = 0;
         counts.forEach((c, d) => {
             if(c < minC) { minC = c; coldDigit = d; }
+            if(c > maxC) { maxC = c; hotDigit = d; }
         });
 
-        let overCount = 0, underCount = 0;
-        digits.forEach(d => {
-            if(d > 4) overCount++;
-            else if(d < 5) underCount++;
-        });
-
-        const overPct = (overCount / n) * 100;
-        const underPct = (underCount / n) * 100;
-
-        if(overPct > 54) {
-            $('dbotPredVal').textContent = '4 (Under)';
-            $('dbotContractType').textContent = 'DIGITUNDER (Barrier 4)';$('dbotBias').textContent = `Over Bias (${overPct.toFixed(1)}%)`;
-        } else if(underPct > 54) {
-            $('dbotPredVal').textContent = '4 (Over)';
-            $('dbotContractType').textContent = 'DIGITOVER (Barrier 4)';$('dbotBias').textContent = `Under Bias (${underPct.toFixed(1)}%)`;
+        // Determine primary recommendation based on highest statistical anomaly
+        if(bestOU.score > 4 && bestOU.type) {
+            // Over / Under signal is strong
+            if(bestOU.type === 'OVER') {
+                $('dbotPredVal').textContent = `${bestOU.barrier} (Over)`;
+                $('dbotContractType').textContent = `DIGITOVER (Barrier ${bestOU.barrier})`;
+                $('dbotBias').textContent = `High Over Bias`;
+                $('dbotStrat').textContent = 'Over / Under';
+            } else {
+                $('dbotPredVal').textContent = `${bestOU.barrier} (Under)`;
+                $('dbotContractType').textContent = `DIGITUNDER (Barrier ${bestOU.barrier})`;
+                $('dbotBias').textContent = `High Under Bias`;
+                $('dbotStrat').textContent = 'Over / Under';
+            }
+        } else if(Math.abs(evenP - 50) > 5) {
+            // Even / Odd signal is strong
+            if(evenP > 52) {
+                $('dbotPredVal').textContent = 'Even';
+                $('dbotContractType').textContent = 'DIGITEVEN';$('dbotBias').textContent = `Even Bias (${evenP.toFixed(1)}%)`;
+                $('dbotStrat').textContent = 'Even / Odd';
+            } else {
+                $('dbotPredVal').textContent = 'Odd';
+                $('dbotContractType').textContent = 'DIGITODD';$('dbotBias').textContent = `Odd Bias (${(100-evenP).toFixed(1)}%)`;
+                $('dbotStrat').textContent = 'Even / Odd';
+            }
         } else {
+            // Default to Digit Differ / Match using cold/hot digits
             $('dbotPredVal').textContent = coldDigit;
             $('dbotContractType').textContent = `DIGITDIFF (Differ ${coldDigit})`;
-            $('dbotBias').textContent = 'Balanced / Differ';
+            $('dbotBias').textContent = `Coldest Digit (${((minC/n)*100).toFixed(1)}%)`;
+            $('dbotStrat').textContent = 'Digit Differ';
         }
     }
 
@@ -314,7 +349,7 @@ window.addEventListener('DOMContentLoaded', () => {
         $('digit').className = 'digit ' + (d % 2 === 0 ? 'even' : '');$('meta').textContent = symbol + ' · ' + (epoch ? new Date(+epoch * 1000).toLocaleTimeString() : 'time n/a') + ' · ' + source;
         digits.push(d);
         counts[d]++;
-        let cap = Math.max(10, Math.min(1000, Number($('count').value) || 500));
+        let cap = Math.max(10, Math.min(1000, Number($('count').value) || 200));
         while(digits.length > cap) counts[digits.shift()]--;
         render();
     }
@@ -330,23 +365,21 @@ window.addEventListener('DOMContentLoaded', () => {
     function nextEndpoint(i) {
         if(!running) return;
         if(i >= endpoints.length) {
-            state('Connection failed', 'Check internet or endpoint.', 'bad');
+            state('Connection failed', 'Check internet.', 'bad');
             stopControls();
             return;
         }
         closeSocket();
         let ep = endpoints[i], got = false;
         state(`Connecting (${i+1}/${endpoints.length})`, ep.name);
-        log('Opening ' + ep.name, 'warn');
         try { ws = new WebSocket(ep.url); } catch(e) {
             nextEndpoint(i + 1);
             return;
         }
 
         ws.onopen = () => {
-            log('OPEN: ' + ep.name, 'ok');
             state('Connected; requesting data', ep.name, 'good');
-            send({ticks_history: symbol, count: Math.max(10, Math.min(1000, +$('count').value || 500)), end: 'latest', style: 'ticks', req_id: 1});
+            send({ticks_history: symbol, count: Math.max(10, Math.min(1000, +$('count').value || 200)), end: 'latest', style: 'ticks', req_id: 1});
             send({ticks: symbol, subscribe: 1, req_id: 2});
 
             timer = setTimeout(() => {
@@ -364,7 +397,6 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             if(d.msg_type === 'history' && d.history) {
                 let ps = d.history.prices || [], ts = d.history.times || [];
-                log('History received: ' + ps.length + ' quotes', 'ok');
                 ps.forEach((q, j) => addQuote(q, d.pip_size, ts[j], 'history'));
             } else if(d.msg_type === 'tick' && d.tick) {
                 addQuote(d.tick.quote, d.tick.pip_size, d.tick.epoch, 'live');
@@ -374,13 +406,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
         ws.onerror = () => log('WebSocket error', 'err');
         ws.onclose = e => {
-            log('CLOSE code=' + e.code, 'err');
             if(!running) return;
             if(!got) nextEndpoint(i + 1);
         };
     }
 
-    // Explicit mobile-safe button listeners
     $('start').addEventListener('click', () => {
         if(running) return;
         symbol = $('market').value;
